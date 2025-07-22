@@ -1,53 +1,44 @@
-const express = require('express');
-const puppeteer = require('puppeteer-core');
-const fs = require('fs');
-const path = require('path');
-const { v4: uuidv4 } = require('uuid');
+const express = require("express");
+const puppeteer = require("puppeteer");
+const bodyParser = require("body-parser");
 
 const app = express();
-app.use(express.json());
-app.use('/public', express.static(path.join(__dirname, 'public')));
+app.use(bodyParser.json({ limit: "10mb" }));
 
-if (!fs.existsSync('./public')) fs.mkdirSync('./public');
-
-app.post('/svg-to-png', async (req, res) => {
-  const svg = req.body?.svg;
-  if (!svg) return res.status(400).json({ error: 'SVG missing' });
-
+app.post("/convert", async (req, res) => {
   try {
-    const filename = `${uuidv4()}.png`;
-    const filepath = path.join(__dirname, 'public', filename);
+    const svg = req.body.svg;
+    if (!svg) return res.status(400).send("SVG content missing");
+
+    const html = `
+      <html>
+        <body style="margin:0;padding:0;">
+          ${svg}
+        </body>
+      </html>
+    `;
 
     const browser = await puppeteer.launch({
-      executablePath: '/usr/bin/chromium',
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
+      args: ["--no-sandbox", "--disable-setuid-sandbox"],
     });
-
     const page = await browser.newPage();
-    await page.setContent(svg, { waitUntil: 'networkidle0' });
+    await page.setContent(html);
 
-    const elementHandle = await page.$('svg');
-    const clip = await elementHandle.boundingBox();
-
-    await page.screenshot({
-      path: filepath,
-      clip,
-      omitBackground: true
-    });
+    const element = await page.$("svg");
+    const screenshot = await element.screenshot({ type: "png" });
 
     await browser.close();
 
-    const url = `https://svg.vozipyme.es/public/${filename}`;
-    res.json({ url });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: error.message });
+    res.setHeader("Content-Type", "image/png");
+    res.send(screenshot);
+  } catch (err) {
+    console.error("Error:", err);
+    res.status(500).send("Conversion failed");
   }
 });
 
 app.listen(3000, () => {
-  console.log('SVG Converter funcionando en puerto 3000');
+  console.log("SVG Converter running on port 3000");
 });
 
 
